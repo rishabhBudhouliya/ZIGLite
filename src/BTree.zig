@@ -1,6 +1,7 @@
 const std = @import("std");
 
-const bit_utils = @import("BitM.zig");
+const bit_utils = @import("bit_utility.zig");
+const record = @import("record.zig");
 
 const Page = union(enum) {
     l_page: LeafPage,
@@ -51,7 +52,19 @@ pub const LeafPage = struct {
         return result.value;
     }
 
-    pub fn GetRecord(self: *const LeafPage, i: u64) Record {}
+    pub fn GetRecord(alloc: std.mem.Allocator, self: *const LeafPage, i: u64) !record {
+        // each page has a header, offset and cells
+        const offset = self.b_page.offsets[i];
+        // we have the offset (location of where the cell is)
+        const cell = self.b_page.content[offset..];
+        // within the cell, we have size of payload, row id, payload, page overflow
+        const size = bit_utils.ProcessVarint(cell);
+        const row_id = bit_utils.ProcessVarint(cell[size.next_position..]);
+        // i == row_id_result.value
+        const start_position = row_id.next_position + size.next_position;
+        const payload = cell[(start_position)..(start_position + size.value)];
+        return record.CreateRecord(alloc, payload);
+    }
 };
 
 pub fn parseCellPointers(alloc: std.heap.DebugAllocator(.{}), cell_pointer: []u8) []u16 {

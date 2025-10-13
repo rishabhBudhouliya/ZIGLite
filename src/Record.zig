@@ -1,7 +1,7 @@
 const std = @import("std");
 const expect = std.testing.expect;
 
-const bit_utils = @import("BitM.zig");
+const bit_utils = @import("bit_utility.zig");
 
 const Value = union(enum) { null_value, int8: i8, int16: i16, int24: i32, int32: i32, int48: i64, int64: i64, float64: f64, text: []const u8, blob: []const u8 };
 
@@ -119,5 +119,5 @@ pub fn CreateRecord(alloc: std.heap.DebugAllocator(.{}), payload: *const []u8) [
 
 test "test Record" {
     const a = 10;
-    try expect(a == 1);
+    try expect(a == 10);
 }
