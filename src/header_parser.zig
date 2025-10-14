@@ -1,13 +1,33 @@
 const std = @import("std");
 
-const sqlite_header = struct { header_string: [16]u8, page_size: [2]u8, file_format_write_version: u8, file_format_read_version: u8, reserved_space: u8, max_payload_fraction: u8, min_payload_fraction: u8, leaf_payload_fraction: u8, file_change_counter: [4]u8, size_in_pages: [4]u8, page_no_freelist_trunk: [4]u8, total_freelist_pages: [4]u8, schema_cookie: [4]u8, schema_format_number: [4]u8, page_cache_size: [4]u8, root_page_size: [4]u8, database_text_encoding: [4]u8, user_version: [4]u8, vacuum_mode: [4]u8, application_id: [4]u8, reserved: [20]u8, version_valid: [4]u8, sqlite_version_number: [4]u8 };
+const HeaderError = error{ HeaderTooShort, InvalidMagicString, InvalidPageType, InvalidHeaderLength };
 
-pub fn parseBTreeHeader() void {}
+const SQLiteHeader = struct { header_string: [16]u8, page_size: u16, file_format_write_version: u8, file_format_read_version: u8, reserved_space: u8, max_payload_fraction: u8, min_payload_fraction: u8, leaf_payload_fraction: u8, file_change_counter: u32, size_in_pages: u32, page_no_freelist_trunk: u32, total_freelist_pages: u32, schema_cookie: u32, schema_format_number: u32, page_cache_size: u32, root_page_size: u32, database_text_encoding: u32, user_version: u32, vacuum_mode: u32, application_id: u32, reserved: [20]u8, version_valid: u32, sqlite_version_number: u32 };
 
-pub fn parseDatabaseHeader(page_content: []u8) void {
+const BtreeHeader = struct { page_type: u8, cells: u16, right_most_pointer: u32 };
+
+pub fn parseDatabaseHeader(page_content: []const u8) HeaderError!SQLiteHeader {
     if (page_content.len < 100) {
-        // return error or log error
-        return null;
+        return HeaderError.HeaderTooShort;
     }
-    const header = page_content[0..100];
+    const header_slice = page_content[0..100];
+    var header: SQLiteHeader = undefined;
+
+    header.page_size = std.mem.readInt(u16, header_slice[16..18], .big);
+    return header;
+}
+
+// could be leaf or interior caller will know
+pub fn parseBtreeHeader(header: []const u8) HeaderError!BtreeHeader {
+    // check if length is 8 or 12 bytes
+    if (header.len != 8 and header.len != 12) {
+        // return with an error
+        return HeaderError.InvalidHeaderLength;
+    }
+    var b_header: BtreeHeader = undefined;
+    b_header.page_type = header[0];
+    if (b_header.page_type != 0x02 and b_header.page_type != 0x05 and b_header.page_type != 0x0a and b_header.page_type != 0x0d) {}
+    b_header.cells = std.mem.readInt(u16, header[3..5], .big);
+    b_header.right_most_pointer = std.mem.readInt(u32, header[(header.len - 4)..header.len], .big);
+    return b_header;
 }
