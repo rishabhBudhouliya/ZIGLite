@@ -1,10 +1,10 @@
 const std = @import("std");
 
-const HeaderError = error{ HeaderTooShort, InvalidMagicString, InvalidPageType, InvalidHeaderLength };
+pub const HeaderError = error{ HeaderTooShort, InvalidMagicString, InvalidPageType, InvalidHeaderLength };
 
-const SQLiteHeader = struct { header_string: [16]u8, page_size: u16, file_format_write_version: u8, file_format_read_version: u8, reserved_space: u8, max_payload_fraction: u8, min_payload_fraction: u8, leaf_payload_fraction: u8, file_change_counter: u32, size_in_pages: u32, page_no_freelist_trunk: u32, total_freelist_pages: u32, schema_cookie: u32, schema_format_number: u32, page_cache_size: u32, root_page_size: u32, database_text_encoding: u32, user_version: u32, vacuum_mode: u32, application_id: u32, reserved: [20]u8, version_valid: u32, sqlite_version_number: u32 };
+pub const SQLiteHeader = struct { header_string: [16]u8, page_size: u16, file_format_write_version: u8, file_format_read_version: u8, reserved_space: u8, max_payload_fraction: u8, min_payload_fraction: u8, leaf_payload_fraction: u8, file_change_counter: u32, size_in_pages: u32, page_no_freelist_trunk: u32, total_freelist_pages: u32, schema_cookie: u32, schema_format_number: u32, page_cache_size: u32, root_page_size: u32, database_text_encoding: u32, user_version: u32, vacuum_mode: u32, application_id: u32, reserved: [20]u8, version_valid: u32, sqlite_version_number: u32 };
 
-const BtreeHeader = struct { page_type: u8, cells: u16, right_most_pointer: u32 };
+pub const BtreeHeader = struct { page_type: u8, cells: u16, right_most_pointer: u32 };
 
 pub fn parseDatabaseHeader(page_content: []const u8) HeaderError!SQLiteHeader {
     if (page_content.len < 100) {

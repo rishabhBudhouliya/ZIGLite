@@ -8,7 +8,7 @@ const Page = union(enum) {
     i_page: InteriorPage,
 };
 
-pub fn NewPage(alloc: std.heap.DebugAllocator(.{}), bh: BtreeHeader, cell_pointer: []u8, page_content: []u8) Page {
+pub fn NewPage(alloc: std.mem.Allocator, bh: BtreeHeader, cell_pointer: []u8, page_content: []u8) Page {
     // var alloc = std.heap.DebugAllocator(.{}).init;
     const base_page = try BasePage.init(parseCellPointers(alloc, cell_pointer), page_content, bh);
     switch (bh.Type) {

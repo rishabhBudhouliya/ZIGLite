@@ -2,7 +2,7 @@ const std = @import("std");
 
 // the pager should hold the reference of file it opened
 // it should also hold the reference of mmap accessed block
-const Pager = struct {
+pub const Pager = struct {
     file: std.fs.File,
     data: []align(std.heap.page_size_min) u8, // a slice: fat pointer pointing to mmapped data
     page_size: u32 = 4096,
@@ -16,6 +16,7 @@ const Pager = struct {
         const size = stat.size;
 
         // mmap api
+        // TODO read more about mmap
         const data = try std.posix.mmap(null, size, std.posix.PROT.READ, .{ .TYPE = .SHARED }, file.handle, 0);
         return Pager{ .file = file, .data = data };
     }
