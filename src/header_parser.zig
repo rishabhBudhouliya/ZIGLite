@@ -19,15 +19,33 @@ pub fn parseDatabaseHeader(page_content: []const u8) HeaderError!SQLiteHeader {
 
 // could be leaf or interior caller will know
 pub fn parseBtreeHeader(header: []const u8) HeaderError!BtreeHeader {
-    // check if length is 8 or 12 bytes
-    if (header.len != 8 and header.len != 12) {
-        // return with an error
+    if (header.len < 8) {
         return HeaderError.InvalidHeaderLength;
     }
+
     var b_header: BtreeHeader = undefined;
     b_header.page_type = header[0];
-    if (b_header.page_type != 0x02 and b_header.page_type != 0x05 and b_header.page_type != 0x0a and b_header.page_type != 0x0d) {}
+
+    // Validate page type
+    if (b_header.page_type != 0x02 and b_header.page_type != 0x05 and
+        b_header.page_type != 0x0a and b_header.page_type != 0x0d) {
+        return HeaderError.InvalidPageType;
+    }
+
     b_header.cells = std.mem.readInt(u16, header[3..5], .big);
-    b_header.right_most_pointer = std.mem.readInt(u32, header[(header.len - 4)..header.len], .big);
+
+    // Interior pages (0x02, 0x05) have 12-byte header with rightmost pointer
+    // Leaf pages (0x0a, 0x0d) have 8-byte header, no rightmost pointer
+    if (b_header.page_type == 0x02 or b_header.page_type == 0x05) {
+        // Interior page: read rightmost pointer from bytes 8-11
+        if (header.len < 12) {
+            return HeaderError.InvalidHeaderLength;
+        }
+        b_header.right_most_pointer = std.mem.readInt(u32, header[8..12], .big);
+    } else {
+        // Leaf page: no rightmost pointer
+        b_header.right_most_pointer = 0;
+    }
+
     return b_header;
 }
