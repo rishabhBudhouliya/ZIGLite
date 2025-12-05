@@ -22,7 +22,7 @@ pub fn main() !void {
     };
     defer pager.close();
 
-    std.debug.print("✓ Database opened ({} bytes)\n", .{pager.data.len});
+    std.debug.print("✓ Database opened ({} bytes)\n", .{pager.db_size});
     std.debug.print("✓ Page size: {} bytes\n\n", .{pager.page_size});
 
     // Test configuration

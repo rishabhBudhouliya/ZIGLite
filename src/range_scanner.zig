@@ -1,5 +1,6 @@
 const std = @import("std");
 const Pager = @import("pager.zig").Pager;
+const PageBuffer = @import("pager.zig").PageBuffer;
 const header_parser = @import("header_parser.zig");
 const btree = @import("btree.zig");
 const record = @import("record.zig");
@@ -30,6 +31,7 @@ pub const BTreeCursor = struct {
 
     // Traversal State
     stack: std.ArrayList(CursorFrame),
+    current_leaf_buffer: ?PageBuffer, // Own the page buffer for current leaf
     current_page: ?btree.Page, // The active Leaf Page object
     current_cell_idx: u16, // Current position inside the active leaf
     pages_read: u64,
@@ -39,6 +41,7 @@ pub const BTreeCursor = struct {
             .pager = pager,
             .allocator = allocator,
             .stack = std.ArrayList(CursorFrame){},
+            .current_leaf_buffer = null,
             .current_page = null,
             .current_cell_idx = 0,
             .pages_read = 0,
@@ -59,9 +62,12 @@ pub const BTreeCursor = struct {
         var next_page_id = root_page_id;
 
         while (true) {
-            const page_data = self.pager.getPage(next_page_id);
+            // Read page into buffer using pread
+            var buffer: PageBuffer = undefined;
+            try self.pager.readPage(next_page_id, &buffer);
             self.pages_read += 1;
 
+            const page_data = buffer[0..];
             const header_offset: usize = if (next_page_id == 1) 100 else 0;
             const btree_header = try header_parser.parseBtreeHeader(page_data[header_offset..@min(page_data.len, header_offset + 12)]);
 
@@ -90,13 +96,29 @@ pub const BTreeCursor = struct {
                         next_page_id = btree_header.right_most_pointer;
                     }
 
-                    // Cleanup interior page wrapper
+                    // Cleanup interior page wrapper (buffer goes out of scope)
                     page.deinit(self.allocator);
                 },
-                .l_page => |*leaf| {
-                    // Found our starting point
-                    self.current_cell_idx = @intCast(try leaf.findCellIndex(start_key));
-                    self.current_page = page; // TAKE OWNERSHIP
+                .l_page => {
+                    // Found our starting point - store buffer FIRST, then create page from stored buffer
+                    self.current_leaf_buffer = buffer;
+
+                    // Now create page from the stored buffer (so slices point to correct location)
+                    const stored_data = self.current_leaf_buffer.?[0..];
+                    const stored_header_offset: usize = if (next_page_id == 1) 100 else 0;
+                    const stored_btree_header = try header_parser.parseBtreeHeader(stored_data[stored_header_offset..@min(stored_data.len, stored_header_offset + 12)]);
+                    const stored_header_size: usize = 8; // Leaf pages: 8-byte header
+                    const stored_content_offset = stored_header_offset + stored_header_size;
+                    const stored_cell_pointers_size = stored_btree_header.cells * 2;
+                    const stored_cell_pointers = stored_data[stored_content_offset .. stored_content_offset + stored_cell_pointers_size];
+
+                    const stored_page = try btree.NewPage(self.allocator, stored_btree_header, stored_cell_pointers, stored_data);
+
+                    // Clean up the original page that was pointing to stack buffer
+                    page.deinit(self.allocator);
+
+                    self.current_cell_idx = @intCast(try stored_page.l_page.findCellIndex(start_key));
+                    self.current_page = stored_page;
                     return;
                 },
             }
@@ -141,10 +163,12 @@ pub const BTreeCursor = struct {
         while (self.stack.items.len > 0) {
             var parent_frame = self.stack.pop() orelse unreachable;
 
-            // Re-load Parent Page
-            const p_data = self.pager.getPage(parent_frame.page_id);
+            // Re-load Parent Page using pread
+            var p_buffer: PageBuffer = undefined;
+            try self.pager.readPage(parent_frame.page_id, &p_buffer);
             self.pages_read += 1;
 
+            const p_data = p_buffer[0..];
             const p_header_offset: usize = if (parent_frame.page_id == 1) 100 else 0;
             const p_btree_header = try header_parser.parseBtreeHeader(p_data[p_header_offset..@min(p_data.len, p_header_offset + 12)]);
 
@@ -189,9 +213,12 @@ pub const BTreeCursor = struct {
     fn descendToLeftmost(self: *BTreeCursor, start_page_id: u32) !void {
         var next_id = start_page_id;
         while (true) {
-            const data = self.pager.getPage(next_id);
+            // Read page using pread
+            var buffer: PageBuffer = undefined;
+            try self.pager.readPage(next_id, &buffer);
             self.pages_read += 1;
 
+            const data = buffer[0..];
             const header_offset: usize = if (next_id == 1) 100 else 0;
             const btree_header = try header_parser.parseBtreeHeader(data[header_offset..@min(data.len, header_offset + 12)]);
 
@@ -213,11 +240,28 @@ pub const BTreeCursor = struct {
                     // Get left-most child
                     next_id = interior.GetLeftmostPageId(0);
 
+                    // Cleanup interior page (buffer goes out of scope)
                     page.deinit(self.allocator);
                 },
                 .l_page => {
-                    // Found the leaf. Set as active.
-                    self.current_page = page;
+                    // Found the leaf. Store buffer FIRST, then create page from stored buffer.
+                    self.current_leaf_buffer = buffer;
+
+                    // Now create page from the stored buffer (so slices point to correct location)
+                    const stored_data = self.current_leaf_buffer.?[0..];
+                    const stored_header_offset: usize = if (next_id == 1) 100 else 0;
+                    const stored_btree_header = try header_parser.parseBtreeHeader(stored_data[stored_header_offset..@min(stored_data.len, stored_header_offset + 12)]);
+                    const stored_header_size: usize = 8; // Leaf pages: 8-byte header
+                    const stored_content_offset = stored_header_offset + stored_header_size;
+                    const stored_cell_pointers_size = stored_btree_header.cells * 2;
+                    const stored_cell_pointers = stored_data[stored_content_offset .. stored_content_offset + stored_cell_pointers_size];
+
+                    const stored_page = try btree.NewPage(self.allocator, stored_btree_header, stored_cell_pointers, stored_data);
+
+                    // Clean up the original page that was pointing to stack buffer
+                    page.deinit(self.allocator);
+
+                    self.current_page = stored_page;
                     self.current_cell_idx = 0;
                     return;
                 },
