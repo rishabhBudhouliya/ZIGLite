@@ -23,10 +23,83 @@ pub fn main() !void {
     defer pager.close();
 
     std.debug.print("✓ Database opened ({} bytes)\n", .{pager.db_size});
-    std.debug.print("✓ Page size: {} bytes\n\n", .{pager.page_size});
+    std.debug.print("✓ Page size: {} bytes\n", .{pager.page_size});
+    std.debug.print("✓ OS: {s}\n\n", .{@tagName(@import("builtin").os.tag)});
 
     // Test configuration
     const TEST_DATA_ROOT_PAGE: u32 = 2; // From: SELECT rootpage FROM sqlite_master WHERE name='test_data'
+
+    // === SANITY CHECK: Test both sync and async ===
+    std.debug.print("=== SANITY CHECK ===\n", .{});
+    std.debug.print("Testing both sync and async with 100 records...\n\n", .{});
+
+    const sanity_size: u64 = 100;
+    const sanity_start: u64 = 1;
+
+    // Test sync
+    std.debug.print("1. Sync test:\n", .{});
+    const sync_result = try range_scanner.rangeScanSync(
+        &pager,
+        TEST_DATA_ROOT_PAGE,
+        sanity_start,
+        sanity_size,
+        allocator,
+    );
+    std.debug.print("   Records: {}, Pages: {}, Time: {d:.2}ms\n", .{
+        sync_result.records_scanned,
+        sync_result.pages_read,
+        sync_result.avgLatencyMs(),
+    });
+
+    // Test async (Linux only)
+    if (@import("builtin").os.tag == .linux) {
+        std.debug.print("\n2. Async test (io_uring):\n", .{});
+        const async_result = range_scanner.rangeScanAsync(
+            &pager,
+            TEST_DATA_ROOT_PAGE,
+            sanity_start,
+            sanity_size,
+            allocator,
+        ) catch |err| {
+            std.debug.print("   ❌ FAILED: {}\n", .{err});
+            std.debug.print("   io_uring may not be available on this system\n", .{});
+            return err;
+        };
+
+        std.debug.print("   Records: {}, Pages: {}, Time: {d:.2}ms\n", .{
+            async_result.records_scanned,
+            async_result.pages_read,
+            async_result.avgLatencyMs(),
+        });
+
+        // Verify correctness
+        if (sync_result.records_scanned != async_result.records_scanned) {
+            std.debug.print("\n❌ ERROR: Record count mismatch!\n", .{});
+            std.debug.print("   Sync: {}, Async: {}\n", .{
+                sync_result.records_scanned,
+                async_result.records_scanned,
+            });
+            return error.AsyncSyncMismatch;
+        }
+
+        std.debug.print("\n✅ Sanity check PASSED - Both implementations return same results\n", .{});
+
+        // Calculate speedup
+        const speedup = sync_result.avgLatencyMs() / async_result.avgLatencyMs();
+        std.debug.print("   Speedup: {d:.2}x ({d:.1}% ", .{ speedup, (speedup - 1.0) * 100.0 });
+        if (speedup > 1.0) {
+            std.debug.print("faster)\n", .{});
+        } else {
+            std.debug.print("slower)\n", .{});
+        }
+    } else {
+        std.debug.print("\n⚠️  Skipping async test (not on Linux)\n", .{});
+        std.debug.print("   io_uring requires Linux. Current OS: {s}\n", .{@tagName(@import("builtin").os.tag)});
+    }
+
+    std.debug.print("\n", .{});
+
+    // === FULL BENCHMARK (if on Linux) ===
     const scan_sizes = [_]u64{100}; // Start with just 100 records
     const iterations: u64 = 10; // Start with just 10 iterations for testing
 
