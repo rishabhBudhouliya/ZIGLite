@@ -7,10 +7,16 @@ const header_parser = @import("header_parser.zig");
 pub const Page = union(enum) {
     l_page: LeafPage,
     i_page: InteriorPage,
+
+    pub fn deinit(self: Page, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .l_page => |lp| allocator.free(lp.b_page.offsets),
+            .i_page => |ip| allocator.free(ip.b_page.offsets),
+        }
+    }
 };
 
 pub fn NewPage(alloc: std.mem.Allocator, bh: header_parser.BtreeHeader, cell_pointer: []u8, page_content: []u8) !Page {
-    // var alloc = std.heap.DebugAllocator(.{}).init;
     var bh_copy = bh;
     const base_page = try BasePage.init(try parseCellPointers(alloc, cell_pointer), page_content, &bh_copy);
     switch (bh.page_type) {
@@ -60,9 +66,10 @@ pub const LeafPage = struct {
             return 0;
         }
         const offset = self.b_page.offsets[i];
-        const cell = self.b_page.content[offset..self.b_page.content.len];
-        const cell_after_skip = cell[4..cell.len];
-        const result = bit_utils.ProcessVarint(cell_after_skip);
+        const cell = self.b_page.content[offset..];
+        // size of payload within leaf cell
+        const size = bit_utils.ProcessVarint(cell);
+        const result = bit_utils.ProcessVarint(cell[size.next_position..]);
         return result.value;
     }
 
@@ -136,10 +143,7 @@ pub const InteriorPage = struct {
 };
 
 pub fn main() !void {
-    // var alloc = std.heap.DebugAllocator(.{}).init;
-    // const dbAlloc = alloc.allocator();
     const cp = [_]u16{ 10, 12, 14, 16 };
-    // const cp_slice: []u16 = cp[0..];
     const page_content = [3]u8{ 5, 5, 5 };
     var header = header_parser.BtreeHeader{ .page_type = 1, .cells = 10, .right_most_pointer = 10 };
     const bPage = try BasePage.init(&cp, &page_content, &header);

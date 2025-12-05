@@ -23,8 +23,17 @@ pub fn CreateRecord(alloc: std.mem.Allocator, payload: []const u8) ![]Value {
     var column_list = payload[next_bit_position..header_size];
     var body = payload[header_size..];
 
+    // First pass: count how many columns there are
+    var num_columns: usize = 0;
+    var temp_list = column_list;
+    while (temp_list.len > 0) {
+        const col_val = bit_utils.ProcessVarint(temp_list);
+        temp_list = temp_list[col_val.next_position..];
+        num_columns += 1;
+    }
+
     var count: usize = 0;
-    const record: []Value = try alloc.alloc(Value, column_list.len);
+    const record: []Value = try alloc.alloc(Value, num_columns);
     while (column_list.len > 0) {
         const column_value = bit_utils.ProcessVarint(column_list);
         const next_col = column_value.next_position;

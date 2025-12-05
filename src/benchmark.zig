@@ -26,6 +26,7 @@ pub fn main() !void {
     std.debug.print("✓ Page size: {} bytes\n\n", .{pager.page_size});
 
     // Test configuration
+    const TEST_DATA_ROOT_PAGE: u32 = 2; // From: SELECT rootpage FROM sqlite_master WHERE name='test_data'
     const scan_sizes = [_]u64{100}; // Start with just 100 records
     const iterations: u64 = 10; // Start with just 10 iterations for testing
 
@@ -48,13 +49,14 @@ pub fn main() !void {
         var total_pages: u64 = 0;
 
         for (0..iterations) |i| {
-            // For now, always start from page 2 (first data page after root)
-            // TODO: Add random starting positions
-            const start_page: u32 = 2;
+            // Start from row_id 1 and scan forward
+            // TODO: Add random starting positions for better coverage
+            const start_row_id: u64 = 1;
 
             const result = try range_scanner.rangeScanSync(
                 &pager,
-                start_page,
+                TEST_DATA_ROOT_PAGE,
+                start_row_id,
                 scan_size,
                 allocator,
             );
