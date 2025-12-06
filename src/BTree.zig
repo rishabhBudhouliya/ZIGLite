@@ -17,8 +17,7 @@ pub const Page = union(enum) {
 };
 
 pub fn NewPage(alloc: std.mem.Allocator, bh: header_parser.BtreeHeader, cell_pointer: []u8, page_content: []u8) !Page {
-    var bh_copy = bh;
-    const base_page = try BasePage.init(try parseCellPointers(alloc, cell_pointer), page_content, &bh_copy);
+    const base_page = try BasePage.init(try parseCellPointers(alloc, cell_pointer), page_content, bh);
     switch (bh.page_type) {
         0x0d => return Page{ .l_page = LeafPage{ .b_page = base_page } },
         0x05 => return Page{ .i_page = InteriorPage{ .b_page = base_page } },
@@ -29,11 +28,11 @@ pub fn NewPage(alloc: std.mem.Allocator, bh: header_parser.BtreeHeader, cell_poi
 // at this level, I won't know the size of the page or its internals.
 // this is a runtime known information
 const BasePage = struct {
-    bh: *header_parser.BtreeHeader,
+    bh: header_parser.BtreeHeader,
     offsets: []const u16,
     content: []const u8,
 
-    pub fn init(cell_pointer: []const u16, page_content: []const u8, header: *header_parser.BtreeHeader) !BasePage {
+    pub fn init(cell_pointer: []const u16, page_content: []const u8, header: header_parser.BtreeHeader) !BasePage {
         return .{ .bh = header, .offsets = cell_pointer, .content = page_content };
     }
 };
@@ -145,8 +144,8 @@ pub const InteriorPage = struct {
 pub fn main() !void {
     const cp = [_]u16{ 10, 12, 14, 16 };
     const page_content = [3]u8{ 5, 5, 5 };
-    var header = header_parser.BtreeHeader{ .page_type = 1, .cells = 10, .right_most_pointer = 10 };
-    const bPage = try BasePage.init(&cp, &page_content, &header);
+    const header = header_parser.BtreeHeader{ .page_type = 1, .cells = 10, .right_most_pointer = 10 };
+    const bPage = try BasePage.init(&cp, &page_content, header);
     const page = InteriorPage{ .b_page = bPage };
     std.debug.print("Page: {any}\n", .{page});
 }
