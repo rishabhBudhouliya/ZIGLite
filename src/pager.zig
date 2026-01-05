@@ -1,45 +1,69 @@
 const std = @import("std");
 
-// the pager should hold the reference of file it opened
-// it should also hold the reference of mmap accessed block
-const Pager = struct {
-    file: std.fs.File,
-    data: []align(std.heap.page_size_min) u8, // a slice: fat pointer pointing to mmapped data
-    page_size: u32 = 4096,
+// Fixed-size page buffer for SQLite pages (4KB standard)
+pub const PAGE_SIZE: usize = 4096;
+pub const PageBuffer = [PAGE_SIZE]u8;
 
-    // open a file and create mmap instance?
+// The pager manages file access using pread for deterministic I/O
+pub const Pager = struct {
+    file: std.fs.File,
+    page_size: usize,
+    db_size: u64, // Total file size for bounds checking
+
+    /// Open a database file and prepare for pread-based access
     pub fn open(file_name: []const u8) !Pager {
         const file = try std.fs.cwd().openFile(file_name, .{ .mode = .read_only });
         errdefer file.close();
 
         const stat = try file.stat();
-        const size = stat.size;
 
-        // mmap api
-        const data = try std.posix.mmap(null, size, std.posix.PROT.READ, .{ .TYPE = .SHARED }, file.handle, 0);
-        return Pager{ .file = file, .data = data };
+        return Pager{
+            .file = file,
+            .page_size = PAGE_SIZE,
+            .db_size = stat.size,
+        };
     }
 
     pub fn close(self: *Pager) void {
         self.file.close();
-        std.posix.munmap(self.data);
     }
 
-    // assuming a page is array of bytes
-    pub fn getPage(self: *Pager, page_num: u32) []u8 {
-        // for page = 1, we would get the first 4096 bytes
-        const offset: usize = (page_num - 1) * self.page_size;
-        const end = offset + self.page_size;
-        return self.data[offset..end];
+    /// Read a single page into the provided buffer using pread
+    /// SQLite pages are 1-indexed (page 1 is at offset 0)
+    pub fn readPage(self: *Pager, page_num: u32, buffer: *PageBuffer) !void {
+        // Calculate offset (SQLite pages are 1-indexed)
+        // page_num starts at 1, so page 1 is at offset 0
+        if (page_num == 0) {
+            return error.InvalidPageNumber;
+        }
+
+        const offset: u64 = (page_num - 1) * self.page_size;
+
+        // Bounds check
+        if (offset + self.page_size > self.db_size) {
+            return error.PageOutOfBounds;
+        }
+
+        // Use pread for position-independent reading
+        const bytes_read = try std.posix.pread(self.file.handle, buffer, offset);
+
+        // Verify we read a full page
+        if (bytes_read != PAGE_SIZE) {
+            return error.ShortRead;
+        }
     }
 };
 
 pub fn main() !void {
-    // Prints to stderr, ignoring potential errors.
+    // Test the new pread-based pager
     var pager = try Pager.open("sample.db");
     defer pager.close();
 
-    std.debug.print("opened database, mapped {} bytes\n", .{pager.data.len});
-    const page1 = pager.getPage(1);
-    std.debug.print("First 16 bytes of page 1: {any}\n", .{page1[0..16]});
+    std.debug.print("Opened database ({} bytes)\n", .{pager.db_size});
+
+    // Read page 1 into buffer
+    var buffer: PageBuffer = undefined;
+    try pager.readPage(1, &buffer);
+
+    std.debug.print("First 16 bytes of page 1: {any}\n", .{buffer[0..16]});
 }

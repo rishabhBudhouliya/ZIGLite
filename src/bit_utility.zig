@@ -1,20 +1,20 @@
 const std = @import("std");
 
-const result = struct { value: u64, next_position: u8 };
+pub const result = struct { value: u64, next_position: u8 };
 
-pub fn ProcessVarint(b: []u8) result {
-    var x: i64 = undefined;
-    for (b) |i| {
+pub fn ProcessVarint(b: []const u8) result {
+    var x: u64 = 0;
+    for (b, 0..) |byte, i| {
         if (i < 8) {
-            x = (x << 7) | (b[i] & 0x7f);
-            if (b[i] & 0x80 == 0) {
-                return .{ .value = x, .nextPos = i + 1 };
+            x = (x << 7) | (byte & 0x7f);
+            if (byte & 0x80 == 0) {
+                return .{ .value = x, .next_position = @intCast(i + 1) };
             }
         }
         if (i == 8) {
-            x = (x << 8) | b[i];
-            return .{ .value = x, .nextPos = i + 1 };
+            x = (x << 8) | byte;
+            return .{ .value = x, .next_position = @intCast(i + 1) };
         }
     }
-    return x;
+    return .{ .value = x, .next_position = @intCast(b.len) };
 }
